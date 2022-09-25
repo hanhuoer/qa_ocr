@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>QA Console</title>
+    <script src="js/vue.js"></script>
+    <script src="js/axios.min.js"></script>
+    <link href="lib/index.css" rel="stylesheet">
+    <script src="lib/index.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+
+        .control {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .preview {
+            display: flex;
+            /*justify-content: space-evenly;*/
+            min-height: 200px;
+            background: #2b2b2b;
+            padding: 5px;
+        }
+
+        .before, .after {
+            width: 50%;
+            text-align: center;
+        }
+
+        .el-upload-dragger {
+            display: table-cell;
+            vertical-align: middle;
+            height: 180px;
+        }
+
+        .el-tabs__content {
+            height: 500px;
+            overflow: auto;
+            background: #f9f9f9;
+        }
+
+        .recognize {
+            text-align: center;
+            font-size: 22px;
+            font-weight: 500;
+            padding: 50px 10px 20px 10px;
+        }
+
+        .qa-wrapper {
+            display: flex;
+            justify-content: space-between;
+            border: 1px inset;
+        }
+
+        .question {
+            width: 580px;
+        }
+
+        .answer {
+            width: 60px;
+        }
+
+        .ratio {
+            width: 100px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="app" @paste="handlePaste">
+    <div>
+        处理结果：
+        <div class="result">
+            <div class="recognize">{[result.recognize]}</div>
+            <el-tabs type="card" v-model="defaultSelectTab">
+                <el-tab-pane label="匹配结果" name="f1">
+                    <div class="qa-wrapper" v-for="item in result.qa">
+                        <div class="question">{[item.question]}</div>
+                        <div class="answer">{[item.answer]}</div>
+                        <div class="ratio">{[item.ratio]}</div>
+                    </div>
+                </el-tab-pane>
+                <el-tab-pane label="原始结果" name="f2">
+                    <div v-for="item in result.raw_out">{[JSON.stringify(item)]}</div>
+                </el-tab-pane>
+                <el-tab-pane label="识别的文字" name="f3">
+                    <div v-for="item in result.raw_lit">{[JSON.stringify(item)]}</div>
+                </el-tab-pane>
+            </el-tabs>
+        </div>
+    </div>
+
+    <div v-loading="loading" style="padding: 30px 0;">
+        控制台：
+        <div class="control">
+            <el-upload
+                    drag
+                    ref="upload"
+                    class="upload-demo"
+                    action="/api/tr-run/"
+                    :show-file-list="false"
+                    :data="uploadData"
+                    :file-list="fileList"
+                    :auto-upload="false"
+                    :on-success="handleOnSuccess"
+                    :on-change="handleOnChange"
+                    :on-error="handleOnError"
+            >
+                点击、拖动、或者粘贴图片
+            </el-upload>
+
+            <div style="height: 180px; padding: 0 70px; min-width: 150px;">
+                <div>
+                    <el-button type="primary"
+                               :disabled="fileList === undefined || fileList === null || fileList.length == 0"
+                               @click="submitUpload">匹配</el-button>
+                </div>
+
+                <div>
+                    <el-switch
+                            v-model="compressEnable"
+                            active-text="压缩图片"
+                            @change="handleSwitchChange">
+                    </el-switch>
+                </div>
+
+                <div>
+                    <el-input-number
+                            v-if="compressEnable"
+                            v-model="uploadData.compress"
+                            controls-position="right"
+                            @change="handleInputChange"
+                            size="mini"
+                            :min="1"
+                            :max="4096"></el-input-number>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div>
+        预览：
+        <div class="preview">
+            <div class="before">
+                <img :src="beforePic" alt="">
+            </div>
+            <div class="after">
+                <img :src="afterPic" alt="">
+            </div>
+        </div>
+    </div>
+
+</div>
+</body>
+
+<script>
+    let app = new Vue({
+        el: '#app',
+        delimiters: ['{[', ']}'],
+        data: {
+            fileList: [],
+            uploadData: {
+                compress: 960
+            },
+            beforePic: null,
+            afterPic: null,
+            compressEnable: true,
+
+            result: {
+                recognize: null,
+                qa: null,
+                raw_out: null,
+                raw_lit: null
+            },
+
+            defaultSelectTab: 'f1',
+            loading: false
+
+        },
+        created() {
+            console.log('hi')
+        },
+        mounted() {
+        },
+        methods: {
+            getProject: function () {
+                let param = {
+                    "projectName": this.projectName
+                }
+                axios({
+                    method: 'post',
+                    url: '/getProject',
+                    param
+                }).then(response => {
+                    console.log(response);
+                })
+            },
+
+            submitUpload() {
+                this.$refs.upload.submit();
+                if (this.fileList && this.fileList.length > 0) {
+                    this.loading = true;
+                }
+
+            },
+            handleOnExceed(files, fileList) {
+                console.log('handleOnExceed', files, fileList)
+                this.fileList = fileList;
+            },
+            handleOnChange(file, fileList) {
+                console.log('handleOnChange', file, fileList)
+                if (file.status === 'ready') {
+                    let _this = this;
+                    this.getBase64(file.raw).then(res => {
+                        _this.beforePic = res;
+                    })
+                    _this.fileList = fileList
+                }
+            },
+            handleOnError(err, file, fileList) {
+                this.loading = false;
+            },
+            handleOnSuccess(response, file, fileList) {
+                console.log('success', response, file, fileList)
+                this.loading = false;
+                if (response.code === 200) {
+                    console.log(response)
+                    this.afterPic = response.data.img_detected
+                    this.result.recognize = response.data.content
+
+                    this.result.qa = []
+                    response.data.match_list.forEach(item => {
+                        this.result.qa.push(JSON.parse(item))
+                    })
+
+
+                    this.result.raw_out = response.data.raw_out
+                    this.result.raw_lit = []
+                    let _this = this
+                    this.result.raw_out.forEach(item => {
+                        _this.result.raw_lit.push(item[1])
+                    })
+
+                    this.$message({
+                        message: `${response.msg}, 耗时: ${response.data.speed_time}`,
+                        type: 'success'
+                    });
+                    this.fileList = []
+                } else {
+                    this.$message({
+                        message: `${response.msg}`,
+                        type: 'warning'
+                    });
+                }
+            },
+            handlePaste(event) {
+                const items = (event.clipboardData || window.clipboardData).items;
+                let file = null;
+                if (!items || items.length === 0) {
+                    this.$message.error("当前浏览器不支持本地");
+                    return;
+                }
+                // 搜索剪切板items
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf("image") !== -1) {
+                        file = items[i].getAsFile();
+                        break;
+                    }
+                }
+                if (!file) {
+                    this.$message.error("粘贴内容非图片");
+                    return;
+                }
+                console.log('paste', file)
+                if (this.fileList.length >= 1) {
+                    // this.$message.error(`上传文件数量不能超过 ${this.limit} 个!`); // 图片数量超出
+                    // return
+                    this.fileList = []
+                }
+                this.$message({
+                    message: `图片就绪`,
+                    type: 'success',
+                    duration: 500
+                });
+                this.$refs.upload.handleStart(file);
+            },
+
+            getBase64(file) {
+                return new Promise(function (resolve, reject) {
+                    let reader = new FileReader();
+                    let imgResult = "";
+                    reader.readAsDataURL(file);
+                    reader.onload = function () {
+                        imgResult = reader.result;
+                    };
+                    reader.onerror = function (error) {
+                        reject(error);
+                    };
+                    reader.onloadend = function () {
+                        resolve(imgResult);
+                    };
+                });
+            },
+
+            handleInputChange(value) {
+                console.log(value)
+            },
+
+            handleSwitchChange(val) {
+                if (!val) {
+                    this.uploadData.compress = 0
+                } else {
+                    this.uploadData.compress = 960
+                }
+            }
+        }
+    })
+</script>
+</html>
